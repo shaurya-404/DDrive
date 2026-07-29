@@ -10,9 +10,18 @@
         <h1>My Files</h1>
         <div class="nav-group">
             <a href="homepage.html" class="nav-btn">← Back to homepage</a>
-            <a href="upload.html" class="nav-btn" style="background-color: #10b981;">Upload</a>
+            <button id="create-folder-btn" class="nav-btn" style="background-color: #f59e0b; border: none; cursor: pointer;">+ Folder</button>
+
+            <button id="upload-nav-btn" class="nav-btn" style="background-color: #10b981; border: none; cursor: pointer;">Upload Here</button>
         </div>
     </div>
+
+    <div id="folder-box" style="display: none; margin-top: 100px; text-align: center;">
+        <input type="text" id="folder-name-input" placeholder="Folder Name" style="width: 200px; padding: 5px;">
+        <button id="submit-folder" style="width: 100px; padding: 6px;">Create</button>
+        <p id="folder-msg"></p>
+    </div>
+
     <div id="file-feed" class="video-grid" style="margin-top: 100px;"></div>
     <script src="myfiles.js"></script>
 </body>

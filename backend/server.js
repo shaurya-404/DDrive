@@ -1,11 +1,10 @@
-const getFolderSize = require("get-folder-size");
 const multer = require('multer');
-const storage = multer.diskStorage({destination: './files',filename: (req, file, cb) => {cb(null, Date.now() + '-' + file.originalname.replace(/\s+/g, '_'));}});
+const storage = multer.diskStorage({destination: './files',filename: (req, file, cb) => {cb(null,file.originalname.replace(/\s+/g, '_'));}});
 const upload = multer({storage: storage });
 var morgan = require('morgan');
 const mysql = require('mysql2/promise');
 const fs = require('node:fs');
-const videopath = './files';
+const filespath = './files';
 
 let pool;
 async function databaser(){
@@ -14,20 +13,8 @@ async function databaser(){
     await pool.end()
     pool = await mysql.createPool({host: 'localhost',user: 'root',password: '1q2w3e4r',database: 'gdrive'});
     await pool.query(`CREATE TABLE IF NOT EXISTS users (id INT AUTO_INCREMENT PRIMARY KEY,email VARCHAR(255) UNIQUE NOT NULL,password VARCHAR(255) NOT NULL)`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS files (file_id INT AUTO_INCREMENT PRIMARY KEY,filename VARCHAR(255),user_id INT,filesize INT,upload DATE)`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS files (file_id INT AUTO_INCREMENT PRIMARY KEY,filename VARCHAR(255),user_id INT,parent varchar(255),type INT,filesize INT,upload DATE)`);
     console.log("Table created");
-    // const [rows, fields] = await pool.query('SELECT filename FROM videos');
-    // const ef=[]
-    // for(let i=0;i<rows.length;i++){
-    //     ef.push(rows[i]['filename']);
-    // }
-    // const files = fs.readdirSync(videopath);
-    // console.log(files);
-    // console.log(rows);
-    // console.log(ef);
-    // for(let i=0;i<files.length;i++){
-    //     if ((files[i]).endsWith('.mp4')) if (!ef.includes(files[i])) await pool.query(`INSERT INTO videos (title, filename, views, likes,uploaded) VALUES (?, ?, 0, 0,'test@dtube.com')`,[files[i].replace('.mp4', ''), files[i]]);
-    // } 
 }
 databaser();
 
@@ -42,8 +29,7 @@ const app = express();
 app.use(cors());
 app.use(morgan('tiny'));
 app.use(express.json());
-//app.use('/videos', express.static('videos'));
-
+app.use('/files', express.static('files'));
 
 app.post('/signup', async (req, res) => {
     try {
@@ -99,37 +85,57 @@ app.post('/resetp', async (req, res) => {
     }
 });
 
-app.post('/upload', upload.single('uploaded_file'), async (req, res) => {
-    //try{
+app.post('/createfolder', async (req, res) => {
+    try {
         const token = req.headers.authorization?.split(' ')[1];
-        if (!token) {
-            if (req.file) fs.unlinkSync(req.file.path); 
-            return res.status(401).json({message: "Unauthorized"});
-        }
+        if (!token) return res.status(401).json({message: "Unauthorized"});
         
         const decoded = jwt.verify(token, JWT_SECRET);
-
-        //const {title} = req.body;
-        const filename = req.file.filename;
-        const sanitizedFileName = req.file.originalname.replace(/\s+/g, '_');
+        const { foldername, parent } = req.body;
+        
         const [existing] = await pool.query(
-            'SELECT * FROM files WHERE filename=? AND user_id=?',[sanitizedFileName,decoded.id]
+            'SELECT * FROM files WHERE filename=? AND user_id=? AND parent=?', [foldername, decoded.id, parent]
         );
         if (existing.length > 0) {
-            fs.unlinkSync(req.file.path);
-            console.log("File existed")
-            return res.status(400).json({message: "You already uploaded a video with this title or file name!"});
+            return res.status(400).json({message: "A folder with this name already exists here!"});
         }
 
-        let size = await getFolderSize.loose(`./${filename}`);
-        await pool.query(`INSERT INTO files (filename,user_id,filesize,upload) VALUES (?,?,?,?)`,[sanitizedFileName,decoded.id,,new Date()]);
+        await pool.query(`INSERT INTO files (filename,user_id,filesize,upload,type,parent) VALUES (?,?,?,?,0,?)`, [foldername, decoded.id, 0, new Date(), parent]);
         
-        console.log("File uploaded.")
-        res.status(200).json({message: "File uploaded successfully!"});
-        
-    // } catch (error) {
-    //     res.status(500).json({message: "Server error."});
-    // }
+        console.log("Folder created.");
+        res.status(200).json({message: "Folder created successfully!"});
+    } catch (error) {
+        res.status(500).json({message: "Server error."});
+    }
+});
+
+app.post('/upload', upload.single('uploaded_file'), async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+        if (req.file) fs.unlinkSync(req.file.path); 
+        return res.status(401).json({message: "Unauthorized"});
+    }
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    const parent = req.body.parent || 'root'; 
+
+    const filename = req.file.filename;
+    const sanitizedFileName = req.file.originalname.replace(/\s+/g, '_');
+    const [existing] = await pool.query(
+        'SELECT * FROM files WHERE filename=? AND user_id=? AND parent=?', [sanitizedFileName, decoded.id, parent]
+    );
+    
+    if (existing.length > 0) {
+        fs.unlinkSync(req.file.path);
+        console.log("File existed");
+        return res.status(400).json({message: "You already uploaded a file with this name in this folder!"});
+    }
+
+    let size = Math.ceil(req.file.size / (1024 * 1024));
+    await pool.query(`INSERT INTO files (filename,user_id,filesize,upload,type,parent) VALUES (?,?,?,?,1,?)`, [sanitizedFileName, decoded.id, size, new Date(), parent]);
+    
+    console.log("File uploaded.");
+    res.status(200).json({message: "File uploaded successfully!"});
 });
 
 app.get('/files/mine', async (req, res) => {
@@ -137,8 +143,10 @@ app.get('/files/mine', async (req, res) => {
         const token = req.headers.authorization?.split(' ')[1];
         if (!token) return res.status(401).json({message: "Unauthorized"});
 
+        const parent = req.query.parent || 'root';
         const decoded = jwt.verify(token, JWT_SECRET);
-        const [files] = await pool.query('SELECT * FROM files WHERE user_id = ? ORDER BY user_id DESC', [decoded.id]);
+        
+        const [files] = await pool.query('SELECT * FROM files WHERE user_id = ? AND parent = ? ORDER BY type ASC, file_id DESC', [decoded.id, parent]);
         res.status(200).json(files);
         
     } catch (error) {
