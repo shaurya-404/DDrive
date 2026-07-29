@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Upload Video</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="trending-header">
+        <h1>File Upload</h1>
+        <div class="nav-group">
+            <a href="homepage.html" class="nav-btn">← Back to homepage</a>
+        </div>
+    </div>
+    <div class="upload-container" style="margin-top: 120px;">
+        <h2>Upload New File</h2>
+        <form id="uploadForm">
+            <input type="file" id="upload-file" required name="uploaded_file">
+            <button type="submit" id="upload-btn" style="background-color: #10b981;">upload a file</button>
+        </form>
+        <div id="upload-status" style="margin-top: 15px;"></div>
+    </div>
+    <script src="upload.js"></script>
+</body>
+</html>
